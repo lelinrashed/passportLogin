@@ -1,10 +1,12 @@
 const express = require('express');
+const passport = require('passport');
+const LocalStrategy = require('passport-local').Strategy;
 const { check, validationResult } = require('express-validator/check');
 const router = express.Router();
 let User = require('../models/user');
 
-// Home page
-router.get('/', (req, res, next)=>{
+// Home page - Dashboard
+router.get('/', ensureAuthenticated, (req, res, next)=>{
     res.render('index');
 });
 
@@ -16,6 +18,13 @@ router.get('/login', (req, res, next)=>{
 // Register form
 router.get('/register', (req, res, next)=>{
     res.render('register');
+});
+
+// Logout
+router.get('/logout', (req, res, next)=>{
+    req.logout();
+    req.flash('success_msg', 'You are logged out.');
+    res.redirect('/login');
 });
 
 // Process register
@@ -55,9 +64,57 @@ router.post('/register',[
             if (err) {
                 console.log(err);
             }
+            req.flash('success_msg', 'You are registered and can login.');
             res.redirect('/login');
         });
     }
 });
+
+// Local strategy
+passport.use(new LocalStrategy((username, password, done)=>{
+    User.getUserByUsername(username, (err, user)=>{
+        if (err) throw err;
+        if (!user) {
+            return done(null, false, {message: 'No user found'});
+        }
+        User.comparePassword(password, user.password, (err, isMatch)=>{
+            if (err) throw err;
+            if (isMatch) {
+                return done(null, user);
+            }else{
+                return done(null, false, {message: 'Wrong password.'});
+            }
+        });
+    });
+}));
+
+passport.serializeUser((user, done) => {
+    done(null, user.id);
+});
+
+passport.deserializeUser((id, done) => {
+    User.getUserById(id, (err, user) => {
+        done(err, user);
+    });
+});
+
+// Login process
+router.post('/login', (req, res, next) => {
+    passport.authenticate('local', {
+       successRedirect:'/',
+       failureRedirect:'/login',
+       failureFlash: true,
+    })(req, res, next);
+});
+
+// Access control
+function ensureAuthenticated(req, res, next){
+    if (req.isAuthenticated()){
+        return next();
+    } else {
+        req.flash('error_msg', 'You are not authorized to view that page.');
+        res.redirect('/login');
+    }
+}
 
 module.exports = router;
